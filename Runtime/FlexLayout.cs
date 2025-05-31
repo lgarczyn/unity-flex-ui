@@ -455,7 +455,7 @@ namespace Gilzoide.FlexUi
         }
         private YGNode _layoutNode;
         private FlexLayout _parentNode;
-        internal readonly List<FlexLayout> _childrenNodes = new List<FlexLayout>();
+        internal List<FlexLayout> _childrenNodes = new List<FlexLayout>();
         private DrivenRectTransformTracker _drivenRectTransformTracker = new DrivenRectTransformTracker();
         private bool _isRefreshScheduled;
         private RectTransform _rectTransform;
