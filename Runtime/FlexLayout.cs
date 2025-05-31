@@ -11,6 +11,7 @@ using UnityEngine.UI;
 namespace Gilzoide.FlexUi
 {
     [ExecuteAlways]
+    [DisallowMultipleComponent]
     [RequireComponent(typeof(RectTransform))]
     public class FlexLayout : UIBehaviour, IComparer<FlexLayout>
     {
