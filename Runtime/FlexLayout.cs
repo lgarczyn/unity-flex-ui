@@ -11,7 +11,6 @@ using UnityEngine.UI;
 namespace Gilzoide.FlexUi
 {
     [ExecuteAlways]
-    [DisallowMultipleComponent]
     [RequireComponent(typeof(RectTransform))]
     public class FlexLayout : UIBehaviour, IComparer<FlexLayout>
     {
@@ -460,6 +459,8 @@ namespace Gilzoide.FlexUi
         private DrivenRectTransformTracker _drivenRectTransformTracker = new DrivenRectTransformTracker();
         private bool _isRefreshScheduled;
         private RectTransform _rectTransform;
+        // Was this layout created to fit a non-FlexLayout element
+        private bool _isVirtualLeaf;
 
         protected override void OnEnable()
         {
@@ -550,10 +551,20 @@ namespace Gilzoide.FlexUi
 
         protected void RefreshLayout()
         {
+            if (_isVirtualLeaf && GetComponent<ILayoutElement>() == null)
+            {
+                SafeDestroy(this);
+                return;
+            }
+
             if (IsRootLayoutNode)
             {
                 Rect rect = RectTransform.rect;
+                if (_width.Unit == Unit.Auto) rect.width = float.NaN;
+                if (_height.Unit == Unit.Auto) rect.height = float.NaN;
                 LayoutNode.CalculateLayout(rect.width, rect.height, _direction);
+                RectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, LayoutNode.LayoutGetHeight());
+                RectTransform.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, LayoutNode.LayoutGetWidth());
             }
             else
             {
@@ -648,6 +659,11 @@ namespace Gilzoide.FlexUi
             {
                 ClearParent();
                 _parentNode = null;
+
+                if (_isVirtualLeaf)
+                {
+                    SafeDestroy(this);
+                }
             }
         }
 
@@ -661,11 +677,47 @@ namespace Gilzoide.FlexUi
 
         protected void RefreshChildren()
         {
+            if (_isVirtualLeaf)
+            {
+                RefreshRootLayout();
+                return;
+            }
             foreach (Transform child in RectTransform)
             {
-                if (child.TryGetComponent(out FlexLayout childLayout) && childLayout.IsActive())
+                if (child.gameObject.activeInHierarchy == false)
+                {
+                    continue;
+                }
+                if (child.TryGetComponent(out FlexLayout childLayout) && childLayout.enabled && childLayout._isVirtualLeaf == false)
                 {
                     TrackChild(childLayout, false);
+                    continue;
+                }
+
+                // TODO: possible multiple layout ignorer, also check enabled
+                if (child.TryGetComponent(out ILayoutIgnorer ignorer) && ignorer.ignoreLayout)
+                {
+                    continue;
+                }
+                // TODO: Check multiple child elements or disabled elements
+                if (child.TryGetComponent(out ILayoutElement _))
+                {
+                    FlexLayout leafLayout;
+                    if (childLayout && childLayout._isVirtualLeaf)
+                    {
+                        leafLayout = childLayout;
+                    }
+                    else
+                    {
+                        leafLayout = child.gameObject.AddComponent<FlexLayout>();
+                    }
+                    leafLayout.hideFlags = HideFlags.HideAndDontSave;
+                    leafLayout._isVirtualLeaf = true;
+                    TrackChild(leafLayout, false);
+                }
+                else if (childLayout && childLayout._isVirtualLeaf)
+                {
+                    SafeDestroy(childLayout);
                 }
             }
             OnChildrenChanged();
@@ -722,6 +774,10 @@ namespace Gilzoide.FlexUi
                 if (child && child._parentNode == this)
                 {
                     child._parentNode = null;
+                    if (child._isVirtualLeaf)
+                    {
+                        SafeDestroy(child);
+                    }
                 }
             }
             _childrenNodes.Clear();
@@ -755,6 +811,18 @@ namespace Gilzoide.FlexUi
             }
         }
 #endif
+
+        private static void SafeDestroy(Component component)
+        {
+            if (Application.IsPlaying(component))
+            {
+                Destroy(component);
+            }
+            else
+            {
+                DestroyImmediate(component);
+            }
+        }
 
         [MonoPInvokeCallback(typeof(Yoga.Yoga.YGMeasureFunc))]
         private static Vector2 RectTransformMeasureFunc(IntPtr nodePtr, float width, MeasureMode widthMode, float height, MeasureMode heightMode)
